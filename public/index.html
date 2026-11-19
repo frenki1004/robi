@@ -1,0 +1,387 @@
+<!doctype html>
+<html lang="hr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#1f4fb8">
+<title>Robi</title>
+<style>
+  :root {
+    --blue: #1f4fb8; --blue-dark: #173c8c; --bg: #f3f5fa; --card: #fff;
+    --text: #14171f; --muted: #5b6375; --line: #d9deea;
+    --green: #1d8a4e; --red: #c0352b; --amber: #9a5b00;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 18px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 520px; margin: 0 auto; padding: 16px 16px 40px; }
+  header { display: flex; align-items: baseline; justify-content: space-between; margin: 8px 0 16px; }
+  h1 { font-size: 34px; margin: 0; color: var(--blue); }
+  .battery { font-size: 18px; color: var(--muted); font-weight: 600; }
+  .battery.low { color: var(--red); }
+  .card { background: var(--card); border-radius: 18px; padding: 18px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+  .status { font-size: 26px; font-weight: 700; text-align: center; padding: 22px 12px; }
+  .status small { display: block; font-size: 17px; font-weight: 500; color: var(--muted); margin-top: 6px; }
+  .status.cleaning { color: var(--green); }
+  .status.error, .status.offline { color: var(--red); }
+  .status.error small { color: var(--text); font-size: 19px; font-weight: 600; }
+  .notice { background: #fff4df; color: var(--amber); border-radius: 14px; padding: 14px 16px; font-weight: 600; margin-bottom: 16px; }
+  .notice.err { background: #fde8e6; color: var(--red); }
+  h2 { font-size: 20px; margin: 0 0 12px; }
+  .map svg { display: block; width: 100%; height: auto; max-height: 52vh; touch-action: manipulation; }
+  .map .caption { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 15px; margin-top: 6px; white-space: nowrap; }
+  .map polygon { stroke: #fff; stroke-width: 60; stroke-linejoin: round; transition: fill .15s; }
+  .map.pick polygon { cursor: pointer; }
+  .map polygon.on { fill: var(--blue) !important; }
+  .map text { font-weight: 700; font-family: -apple-system, BlinkMacSystemFont, sans-serif; fill: #1d2433; text-anchor: middle; dominant-baseline: middle; pointer-events: none; paint-order: stroke; stroke: rgba(255,255,255,.85); stroke-width: .25em; }
+  .map text.on { fill: #fff; stroke: none; }
+  .problem { border: 3px solid var(--red); }
+  .problem h2 { color: var(--red); font-size: 22px; margin-bottom: 4px; }
+  .problem .what { font-size: 21px; font-weight: 700; margin: 0 0 10px; }
+  .problem ol { margin: 0; padding-left: 26px; }
+  .problem li { margin: 8px 0; }
+  .problem .after { color: var(--muted); font-size: 16px; margin: 12px 0 0; }
+  .problem.info { border-color: var(--amber); }
+  .problem.info h2 { color: var(--amber); }
+  .rooms { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .room {
+    min-height: 72px; border: 2px solid var(--line); background: #fff; border-radius: 14px;
+    font: inherit; font-weight: 600; color: var(--text); padding: 10px; cursor: pointer;
+  }
+  .room.on { border-color: var(--blue); background: #e6edfb; color: var(--blue-dark); }
+  .room.on::before { content: "✓ "; }
+  button.big {
+    display: block; width: 100%; min-height: 68px; border: 0; border-radius: 16px;
+    font: inherit; font-size: 22px; font-weight: 700; color: #fff; background: var(--blue);
+    margin-top: 12px; cursor: pointer;
+  }
+  button.big:disabled { background: #b9c0cf; cursor: default; }
+  button.big.secondary { background: #fff; color: var(--blue); border: 2px solid var(--blue); }
+  button.big.home { background: var(--blue-dark); }
+  button.link { background: none; border: 0; color: var(--blue); font: inherit; text-decoration: underline; padding: 8px 0; cursor: pointer; }
+  p.muted { color: var(--muted); font-size: 16px; margin: 6px 0 0; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1 id="title">Robi</h1>
+    <span class="battery" id="battery"></span>
+  </header>
+
+  <div class="notice err" id="toast" hidden></div>
+
+  <section id="blocked" hidden>
+    <div class="card status error">
+      <span id="blockedHead">Nema pristupa</span>
+      <small id="blockedText"></small>
+    </div>
+  </section>
+
+  <section id="loading">
+    <div class="card status">Spajam se na robota…</div>
+  </section>
+
+  <section id="ready" hidden>
+    <div class="card status" id="status"></div>
+    <div class="card problem" id="problem" hidden>
+      <h2 id="problemHead">Robot treba pomoć</h2>
+      <p class="what" id="problemTitle"></p>
+      <ol id="problemSteps"></ol>
+      <p class="after" id="problemAfter">Kad riješiš, dodirni »Nastavi«.</p>
+    </div>
+    <div class="notice" id="stationNote" hidden></div>
+    <div class="notice" id="relocNote" hidden>Robot traži gdje se nalazi na karti. Pričekaj malo.</div>
+    <div class="card map" id="mapCard" hidden>
+      <svg id="map" xmlns="http://www.w3.org/2000/svg"></svg>
+      <div class="caption"><span id="mapName"></span><span id="mapHint">Dodirni sobu za odabir</span></div>
+    </div>
+    <div class="notice" id="batteryNote" hidden>Baterija je slaba. Vrati robota na stanicu da se napuni.</div>
+
+    <div id="pickRooms">
+      <div class="card">
+        <h2>Koje sobe očistiti?</h2>
+        <div class="rooms" id="rooms"></div>
+        <p class="muted" id="noRooms" hidden>Učitavam sobe… <button class="link" id="reload">Osvježi</button></p>
+        <button class="big" id="start" disabled>Odaberi sobu</button>
+      </div>
+    </div>
+
+    <div id="running" hidden>
+      <button class="big secondary" id="pause">Pauza</button>
+      <button class="big secondary" id="resume" hidden>Nastavi</button>
+      <button class="big home" id="home">Završi i vrati na stanicu</button>
+    </div>
+  </section>
+</main>
+
+<script>
+// --- secret key: arrives once in the link (#k=...), then lives in this phone
+const K_STORE = "robi-key";
+window.addEventListener("hashchange", () => { if (/k=/.test(location.hash)) location.reload(); });
+(function takeKeyFromLink() {
+  const m = location.hash.match(/k=([^&]+)/);
+  if (m) {
+    try { localStorage.setItem(K_STORE, decodeURIComponent(m[1])); } catch {}
+    history.replaceState(null, "", location.pathname);
+    window.__key = decodeURIComponent(m[1]);
+  }
+})();
+function key() {
+  try { return localStorage.getItem(K_STORE) || window.__key || ""; } catch { return window.__key || ""; }
+}
+
+const ROOM_NAMES = {
+  "living room": "Dnevni boravak", "kitchen": "Kuhinja", "dining room": "Blagovaonica",
+  "bedroom": "Spavaća soba", "kids room": "Dječja soba", "children's room": "Dječja soba",
+  "bathroom": "Kupaonica", "corridor": "Hodnik", "study": "Radna soba", "balcony": "Balkon",
+  "laundry": "Praonica", "toilet": "WC", "storeroom": "Ostava", "lounge": "Dnevni boravak",
+};
+const STATE_TEXT = {
+  docked: ["Na stanici", "Spreman za čišćenje"],
+  idle: ["Miruje", "Spreman za čišćenje"],
+  cleaning: ["Čisti", "Robot radi"],
+  paused: ["Pauzirano", "Dodirni »Nastavi« ili ga vrati na stanicu"],
+  returning: ["Vraća se na stanicu", "Ne treba ništa dirati"],
+  error: ["Robot treba pomoć", ""],
+  unknown: ["Provjeravam…", ""],
+};
+const STATION_TEXT = {
+  emptying: "Stanica prazni prašinu. Pričekaj par minuta.",
+  washing: "Stanica pere krpe. Pričekaj par minuta.",
+  drying: "Stanica suši krpe. Robot se može koristiti.",
+};
+
+const $ = id => document.getElementById(id);
+let data = null;
+const picked = new Set();
+
+function roomName(n) { return ROOM_NAMES[n.trim().toLowerCase()] || n; }
+
+function toast(msg) {
+  const t = $("toast");
+  t.textContent = msg; t.hidden = !msg;
+}
+
+async function api(path, body) {
+  const res = await fetch(path, {
+    method: body === undefined ? "GET" : "POST",
+    headers: { "Content-Type": "application/json", "X-Robi-Key": key() },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  let json = null;
+  try { json = await res.json(); } catch {}
+  if (!res.ok) {
+    const err = new Error((json && json.detail) || "Nešto nije uspjelo. Pokušaj ponovno.");
+    err.status = res.status;
+    throw err;
+  }
+  return json;
+}
+
+function show(id) {
+  for (const s of ["blocked", "loading", "ready"]) $(s).hidden = s !== id;
+}
+
+function blocked(head, text) {
+  show("blocked");
+  $("blockedHead").textContent = head;
+  $("blockedText").textContent = text;
+  $("battery").textContent = "";
+}
+
+function render(d) {
+  data = d;
+  if (!d.configured) return blocked("Robi nije postavljen", d.message || "");
+  show("ready");
+  $("title").textContent = d.name || "Robi";
+  const bat = $("battery");
+  bat.textContent = d.battery != null ? `🔋 ${d.battery}%` : "";
+  const low = d.battery != null && d.battery < 20 && !["docked", "returning"].includes(d.state);
+  bat.classList.toggle("low", low);
+  $("batteryNote").hidden = !low;
+
+  // headline
+  const state = d.online === false ? "offline" : d.state;
+  const [head, sub] = state === "offline"
+    ? ["Robot nije dostupan", "Je li uključen i spojen na Wi-Fi?"]
+    : (STATE_TEXT[state] || STATE_TEXT.unknown);
+  const st = $("status");
+  st.className = "card status " + state;
+  st.textContent = head;
+  const small = document.createElement("small");
+  let detail = sub;
+  if (state === "error") detail = "Pogledaj upute ispod.";
+  else if (state === "cleaning" && d.minutes != null)
+    detail = `Robot radi · ${d.minutes} min${d.area ? ` · ${d.area} m²` : ""}`;
+  small.textContent = detail;
+  st.append(small);
+
+  // problem with fix steps
+  const p = d.problem;
+  $("problem").hidden = !p;
+  if (p) {
+    const info = p.severity === "info";
+    $("problem").classList.toggle("info", info);
+    $("problemHead").textContent = info ? "Obavijest" : "Robot treba pomoć";
+    $("problemTitle").textContent = p.title;
+    const ol = $("problemSteps");
+    ol.innerHTML = "";
+    for (const step of p.steps) { const li = document.createElement("li"); li.textContent = step; ol.append(li); }
+    ol.hidden = !p.steps.length;
+    $("problemAfter").hidden = info || (state !== "paused" && state !== "error")
+      || p.steps.some(x => x.includes("Nastavi"));
+  }
+
+  // station
+  const stationMsg = STATION_TEXT[d.station];
+  $("stationNote").hidden = !stationMsg;
+  $("stationNote").textContent = stationMsg || "";
+  const stationBusy = d.station === "emptying" || d.station === "washing";
+
+  // which controls
+  const running = state === "cleaning" || state === "paused" || state === "error";
+  $("pickRooms").hidden = running || state === "returning" || state === "offline";
+  $("running").hidden = !running;
+  $("pause").hidden = state !== "cleaning";
+  $("resume").hidden = state !== "paused" && state !== "error";
+
+  // rooms
+  const ids = new Set(d.rooms.map(r => r.id));
+  for (const id of [...picked]) if (!ids.has(id)) picked.delete(id);
+  const box = $("rooms");
+  const rkey = JSON.stringify(d.rooms);
+  if (box.dataset.key !== rkey) {
+    box.dataset.key = rkey;
+    box.innerHTML = "";
+    for (const r of d.rooms) {
+      const b = document.createElement("button");
+      b.className = "room"; b.dataset.id = r.id; b.textContent = roomName(r.name);
+      b.onclick = () => { picked.has(r.id) ? picked.delete(r.id) : picked.add(r.id); render(data); };
+      box.append(b);
+    }
+  }
+  for (const b of box.children) b.classList.toggle("on", picked.has(+b.dataset.id));
+  $("noRooms").hidden = d.rooms.length > 0;
+
+  $("relocNote").hidden = !d.relocating || state === "offline";
+  drawMap(d, !$("pickRooms").hidden);
+
+  const start = $("start");
+  start.disabled = picked.size === 0 || stationBusy;
+  start.textContent = stationBusy ? "Pričekaj…" :
+    picked.size === 0 ? "Odaberi sobu" :
+    picked.size === 1 ? "Počni čistiti" : `Počni čistiti (${picked.size} sobe)`;
+}
+
+const FILLS = ["#c9d8f7", "#f6dfae", "#f4c4cf", "#bfe8e2", "#d9cdf5", "#f5d2b5", "#c8eac8", "#e6e1d3"];
+const SVG = "http://www.w3.org/2000/svg";
+function el(tag, attrs) {
+  const n = document.createElementNS(SVG, tag);
+  for (const k in attrs) n.setAttribute(k, attrs[k]);
+  return n;
+}
+function drawMap(d, picking) {
+  const m = d.map, card = $("mapCard");
+  card.hidden = !m || !m.rooms.length || d.online === false;
+  if (card.hidden) return;
+  card.classList.toggle("pick", picking);
+  $("mapName").textContent = m.name || "";
+  $("mapHint").hidden = !picking;
+  const svg = $("map");
+  const key = m.mid + JSON.stringify(m.rooms.map(r => r.id));
+  if (svg.dataset.key !== key) {
+    svg.dataset.key = key;
+    svg.innerHTML = "";
+    const xs = [], ys = [];
+    for (const r of m.rooms) for (const [x, y] of r.points) { xs.push(x); ys.push(y); }
+    const pad = 300, minX = Math.min(...xs) - pad, minY = Math.min(...ys) - pad;
+    const w = Math.max(...xs) - minX + pad, h = Math.max(...ys) - minY + pad;
+    svg.setAttribute("viewBox", `${minX} ${minY} ${w} ${h}`);
+    const fontSize = Math.max(w, h) / 19;
+    const names = Object.fromEntries(d.rooms.map(r => [r.id, roomName(r.name)]));
+    const shapes = el("g", {}), labels = el("g", {}), marks = el("g", { id: "marks" });
+    m.rooms.forEach((r, i) => {
+      const poly = el("polygon", { points: r.points.map(p => p.join(",")).join(" "), fill: FILLS[i % FILLS.length] });
+      poly.dataset.id = r.id;
+      poly.addEventListener("click", () => {
+        if (!$("mapCard").classList.contains("pick")) return;
+        picked.has(r.id) ? picked.delete(r.id) : picked.add(r.id);
+        render(data);
+      });
+      shapes.append(poly);
+      let [cx, cy] = r.label || [0, 0];
+      if (!r.label) { cx = r.points.reduce((a, p) => a + p[0], 0) / r.points.length; cy = r.points.reduce((a, p) => a + p[1], 0) / r.points.length; }
+      const t = el("text", { x: cx, y: cy, "font-size": fontSize }); t.dataset.id = r.id;
+      const words = (names[r.id] || "").split(" ");
+      const lines = words.length > 1 && words.join(" ").length > 9
+        ? [words.slice(0, Math.ceil(words.length / 2)).join(" "), words.slice(Math.ceil(words.length / 2)).join(" ")]
+        : [words.join(" ")];
+      lines.forEach((line, k) => {
+        const ts = el("tspan", { x: cx, dy: k === 0 ? `${-(lines.length - 1) * 0.55}em` : "1.1em" });
+        ts.textContent = line; t.append(ts);
+      });
+      labels.append(t);
+    });
+    svg.append(shapes, labels, marks);
+  }
+  for (const n of svg.querySelectorAll("[data-id]")) n.classList.toggle("on", picked.has(+n.dataset.id));
+  // robot + station
+  const marks = svg.querySelector("#marks");
+  marks.innerHTML = "";
+  const pos = d.positions || {};
+  if (pos.station) {
+    const [x, y] = pos.station;
+    marks.append(el("rect", { x: x - 220, y: y - 220, width: 440, height: 440, rx: 90, fill: "#3b4256" }));
+  }
+  if (pos.robot) {
+    const [x, y] = pos.robot;
+    marks.append(el("circle", { cx: x, cy: y, r: 260, fill: "#fff", stroke: "#1f4fb8", "stroke-width": 110 }));
+  }
+}
+
+function handleError(e) {
+  if (e.status === 401 && !key()) return blocked("Nema pristupa", "Otvori Robi preko poveznice koju si dobio.");
+  if (e.status === 401 && /ključ/i.test(e.message)) return blocked("Nema pristupa", e.message);
+  toast(e.message);
+}
+
+let busy = false;
+async function act(path, body = {}, btn) {
+  busy = true;
+  if (btn) btn.disabled = true;
+  try { render(await api(path, body)); toast(""); }
+  catch (e) { handleError(e); }
+  finally { busy = false; if (btn) btn.disabled = false; schedule(); }
+}
+
+let timer;
+function schedule() {
+  clearTimeout(timer);
+  // poll faster while something is happening
+  const active = data && ["cleaning", "returning"].includes(data.state);
+  timer = setTimeout(poll, active ? 5000 : 10000);
+}
+async function poll() {
+  if (busy || document.hidden) return schedule();
+  try { render(await api("/api/status")); toast(""); }
+  catch (e) { if (e instanceof TypeError) toast("Nema interneta."); else handleError(e); }
+  schedule();
+}
+document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); });
+
+$("start").onclick = e => act("/api/clean", { rooms: [...picked] }, e.currentTarget).then(() => picked.clear());
+$("pause").onclick = e => act("/api/pause", {}, e.currentTarget);
+$("resume").onclick = e => act("/api/resume", {}, e.currentTarget);
+$("home").onclick = e => act("/api/home", {}, e.currentTarget);
+$("reload").onclick = e => act("/api/refresh", {}, e.currentTarget);
+
+if (!key()) blocked("Nema pristupa", "Otvori Robi preko poveznice koju si dobio.");
+else poll();
+</script>
+</body>
+</html>
